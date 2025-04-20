@@ -5,8 +5,6 @@
   "scripts": {
     "start": "export $(grep -v '^#' .env.local | xargs) && expo start",
     "start:win": "node ./scripts/start-windows.js",
-    "reset-project": "node ./scripts/reset-project.js",
-    "setup-storage": "node ./scripts/setup-storage.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
