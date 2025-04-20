@@ -7,6 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/Colors';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import ShareModal from './share-modal';
+import { Checkbox, IconButton } from 'react-native-paper';
+import * as Haptics from 'expo-haptics';
 
 export default function NoteScreen() {
   const { id } = useLocalSearchParams();
@@ -24,6 +26,8 @@ export default function NoteScreen() {
   const [isSharedNote, setIsSharedNote] = useState(false);
   const [readOnlyMode, setReadOnlyMode] = useState(false);
   const [isMyNote, setIsMyNote] = useState(false);
+  const [noteType, setNoteType] = useState('text');
+  const [checklistItems, setChecklistItems] = useState([]);
 
   useEffect(() => {
     if (id && id !== 'new') {
@@ -38,6 +42,10 @@ export default function NoteScreen() {
         setIsSharedNote(false);
         setIsMyNote(true);
         setReadOnlyMode(false);
+        setNoteType(noteToEdit.type || 'text');
+        if (noteToEdit.type === 'checklist' && noteToEdit.checklistItems) {
+          setChecklistItems(noteToEdit.checklistItems);
+        }
       } else {
         // Si no está en las propias, buscar en las compartidas
         noteToEdit = sharedNotes.find(note => note.id === id);
@@ -48,6 +56,10 @@ export default function NoteScreen() {
           setInitialNote(noteToEdit);
           setIsSharedNote(true);
           setIsMyNote(false);
+          setNoteType(noteToEdit.type || 'text');
+          if (noteToEdit.type === 'checklist' && noteToEdit.checklistItems) {
+            setChecklistItems(noteToEdit.checklistItems);
+          }
           
           // Verificar si la nota es de solo lectura o lectura/escritura
           const isReadOnly = noteToEdit.permission === 'read';
@@ -64,9 +76,30 @@ export default function NoteScreen() {
 
   useEffect(() => {
     if (initialNote) {
-      setIsModified(title !== initialNote.title || content !== initialNote.content);
+      if (noteType === 'checklist') {
+        // Para listas de tareas, comparamos el título y los items
+        const initialItems = initialNote.checklistItems || [];
+        const currentItems = checklistItems || [];
+        
+        // Verificar si hay cambios en la lista
+        let itemsChanged = initialItems.length !== currentItems.length;
+        if (!itemsChanged) {
+          for (let i = 0; i < initialItems.length; i++) {
+            if (initialItems[i].text !== currentItems[i].text || 
+                initialItems[i].checked !== currentItems[i].checked) {
+              itemsChanged = true;
+              break;
+            }
+          }
+        }
+        
+        setIsModified(title !== initialNote.title || itemsChanged);
+      } else {
+        // Para otros tipos de notas, comparamos título y contenido
+        setIsModified(title !== initialNote.title || content !== initialNote.content);
+      }
     }
-  }, [title, content, initialNote]);
+  }, [title, content, checklistItems, initialNote, noteType]);
 
   const handleSave = async () => {
     if (id === 'new') {
@@ -75,7 +108,15 @@ export default function NoteScreen() {
     }
     
     if (id && title.trim() !== '' && isModified && !readOnlyMode) {
-      await updateNote(id, { title, content });
+      if (noteType === 'checklist') {
+        await updateNote(id, { 
+          title, 
+          type: 'checklist',
+          checklistItems
+        });
+      } else {
+        await updateNote(id, { title, content });
+      }
       setIsModified(false);
     }
     
@@ -99,6 +140,50 @@ export default function NoteScreen() {
       handleSave();
     } else {
       router.back();
+    }
+  };
+
+  const toggleChecklistItem = (index) => {
+    if (readOnlyMode) return;
+    
+    const newItems = [...checklistItems];
+    newItems[index].checked = !newItems[index].checked;
+    setChecklistItems(newItems);
+    
+    if (Platform.OS === 'ios') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  };
+
+  const updateChecklistItem = (index, text) => {
+    if (readOnlyMode) return;
+    
+    const newItems = [...checklistItems];
+    newItems[index].text = text;
+    setChecklistItems(newItems);
+  };
+
+  const addChecklistItem = () => {
+    if (readOnlyMode) return;
+    
+    setChecklistItems([...checklistItems, { text: '', checked: false }]);
+    
+    if (Platform.OS === 'ios') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  };
+
+  const removeChecklistItem = (index) => {
+    if (readOnlyMode) return;
+    
+    if (checklistItems.length > 1) {
+      const newItems = [...checklistItems];
+      newItems.splice(index, 1);
+      setChecklistItems(newItems);
+      
+      if (Platform.OS === 'ios') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
     }
   };
 
@@ -183,17 +268,80 @@ export default function NoteScreen() {
             autoFocus={id === 'new'}
           />
           
-          <TextInput
-            style={[styles.contentInput, { color: colors.text }]}
-            value={content}
-            onChangeText={setContent}
-            placeholder="Escribe tu nota aquí..."
-            placeholderTextColor={colors.gray}
-            multiline
-            textAlignVertical="top"
-            selectionColor={colors.primary || colors.tint}
-            editable={!readOnlyMode}
-          />
+          {noteType === 'text' && (
+            <TextInput
+              style={[styles.contentInput, { color: colors.text }]}
+              value={content}
+              onChangeText={setContent}
+              placeholder="Escribe tu nota aquí..."
+              placeholderTextColor={colors.gray}
+              multiline
+              textAlignVertical="top"
+              selectionColor={colors.primary || colors.tint}
+              editable={!readOnlyMode}
+            />
+          )}
+
+          {noteType === 'checklist' && (
+            <View style={styles.checklistContainer}>
+              {checklistItems.length === 0 ? (
+                <Text style={{ color: colors.text, textAlign: 'center', marginTop: 20, opacity: 0.6 }}>
+                  No hay elementos en esta lista
+                </Text>
+              ) : (
+                checklistItems.map((item, index) => (
+                  <View key={index} style={styles.checklistItem}>
+                    <Checkbox
+                      status={item.checked ? 'checked' : 'unchecked'}
+                      onPress={() => toggleChecklistItem(index)}
+                      color={colors.primary || colors.tint}
+                      disabled={readOnlyMode}
+                    />
+                    <TextInput
+                      style={[styles.checklistInput, { 
+                        color: colors.text,
+                        textDecorationLine: item.checked ? 'line-through' : 'none',
+                        opacity: item.checked ? 0.6 : 1
+                      }]}
+                      placeholder="Elemento de la lista..."
+                      placeholderTextColor={colors.gray}
+                      value={item.text}
+                      onChangeText={(text) => updateChecklistItem(index, text)}
+                      selectionColor={colors.primary || colors.tint}
+                      editable={!readOnlyMode}
+                    />
+                    {!readOnlyMode && (
+                      <IconButton
+                        icon="close"
+                        size={20}
+                        onPress={() => removeChecklistItem(index)}
+                        iconColor={colors.gray}
+                      />
+                    )}
+                  </View>
+                ))
+              )}
+              
+              {!readOnlyMode && (
+                <TouchableOpacity 
+                  style={[styles.addItemButton, { borderColor: colors.primary || colors.tint }]}
+                  onPress={addChecklistItem}
+                >
+                  <Ionicons name="add" size={20} color={colors.primary || colors.tint} />
+                  <Text style={{ color: colors.primary || colors.tint, marginLeft: 8 }}>Agregar elemento</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
+          {noteType === 'voice' && (
+            <View style={styles.voiceContainer}>
+              <Text style={{ color: colors.text, textAlign: 'center' }}>
+                Nota de voz
+              </Text>
+              {/* Aquí iría el reproductor de audio */}
+            </View>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -280,4 +428,35 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 6,
   },
+  checklistContainer: {
+    marginTop: 16,
+  },
+  checklistItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    marginBottom: 8,
+  },
+  checklistInput: {
+    flex: 1,
+    fontSize: 16,
+    marginLeft: 8,
+    padding: 4,
+  },
+  addItemButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginTop: 16,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    justifyContent: 'center',
+  },
+  voiceContainer: {
+    marginTop: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  }
 }); 
