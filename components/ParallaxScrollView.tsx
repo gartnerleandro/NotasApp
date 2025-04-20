@@ -10,6 +10,7 @@ import Animated, {
 import { ThemedView } from '@/components/ThemedView';
 import { useBottomTabOverflow } from '@/components/ui/TabBarBackground';
 import { useColorScheme } from '@/hooks/useColorScheme';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const HEADER_HEIGHT = 250;
 
@@ -45,7 +46,7 @@ export default function ParallaxScrollView({
   });
 
   return (
-    <ThemedView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <Animated.ScrollView
         ref={scrollRef}
         scrollEventThrottle={16}
@@ -61,7 +62,7 @@ export default function ParallaxScrollView({
         </Animated.View>
         <ThemedView style={styles.content}>{children}</ThemedView>
       </Animated.ScrollView>
-    </ThemedView>
+    </SafeAreaView>
   );
 }
 

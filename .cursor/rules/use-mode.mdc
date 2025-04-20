@@ -1,0 +1,14 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Modos
+
+## Plan
+Cada vez que te diga /plan o usa el modo plan, me refiero al modo plan configurado en el archivo [memoria.mdc](mdc:.cursor/rules/memoria.mdc)
+
+## Act
+Cada vez que te diga /act o usa el modo act, me refiero al modo act configurado en el archivo [memoria.mdc](mdc:.cursor/rules/memoria.mdc)
+
+Cuando utilices cualquiera de estos dos modos debes seguir específicamete los pasos del archivo [memoria.mdc](mdc:.cursor/rules/memoria.mdc) para cada modo.
