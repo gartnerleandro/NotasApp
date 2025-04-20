@@ -1,16 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, ScrollView, KeyboardAvoidingView, Platform, TextInput, TouchableOpacity, useColorScheme } from 'react-native';
+import { StyleSheet, View, ScrollView, KeyboardAvoidingView, Platform, TextInput, TouchableOpacity, useColorScheme, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useNotes } from '../../context/notes-context';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/Colors';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
-import { Checkbox, Text, List, IconButton, useTheme } from 'react-native-paper';
+import { Checkbox, Text, List, IconButton, useTheme, ActivityIndicator } from 'react-native-paper';
 import * as Haptics from 'expo-haptics';
+import { Audio } from 'expo-av';
+import { useAuth } from '../../context/auth-context';
+import { uploadAudioFile } from '../../lib/storage-service';
 
 export default function NewNoteScreen() {
   const { addNote } = useNotes();
+  const { session } = useAuth();
   const router = useRouter();
   const params = useLocalSearchParams();
   const colorScheme = useColorScheme() || 'light';
@@ -25,6 +29,9 @@ export default function NewNoteScreen() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [recordingTimer, setRecordingTimer] = useState(null);
+  const [recording, setRecording] = useState(null);
+  const [recordingUri, setRecordingUri] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
   
   useEffect(() => {
     // Determinar el tipo de nota basado en los parámetros
@@ -43,11 +50,42 @@ export default function NewNoteScreen() {
           setTitle('');
       }
     }
+    
+    // Solicitar permisos para grabar audio si es tipo nota de voz
+    if (params.type === 'voice') {
+      requestAudioPermissions();
+    }
+    
+    // Limpiar al desmontar el componente
+    return () => {
+      if (recordingTimer) {
+        clearInterval(recordingTimer);
+      }
+      if (recording) {
+        stopRecording();
+      }
+    };
   }, [params]);
+  
+  const requestAudioPermissions = async () => {
+    try {
+      const { granted } = await Audio.requestPermissionsAsync();
+      if (!granted) {
+        Alert.alert(
+          "Permisos requeridos",
+          "Necesitamos acceso al micrófono para grabar notas de voz.",
+          [{ text: "OK" }]
+        );
+      }
+    } catch (error) {
+      console.error('Error al solicitar permisos de audio:', error);
+    }
+  };
   
   const handleSave = async () => {
     if (title.trim() === '' && content.trim() === '' && 
-      (noteType !== 'checklist' || !checklistItems.some(item => item.text.trim() !== ''))) {
+      (noteType !== 'checklist' || !checklistItems.some(item => item.text.trim() !== '')) &&
+      (noteType !== 'voice' || !recordingUri)) {
       // No guardar notas vacías
       router.back();
       return;
@@ -56,35 +94,56 @@ export default function NewNoteScreen() {
     const finalTitle = title.trim() === '' ? 'Sin título' : title;
     let noteData = {};
     
-    switch (noteType) {
-      case 'checklist':
-        // Filtrar ítems vacíos y formatear
-        const filteredItems = checklistItems.filter(item => item.text.trim() !== '');
-        noteData = { 
-          title: finalTitle, 
-          content: '', // El contenido real son los ítems
-          type: 'checklist',
-          checklistItems: filteredItems
-        };
-        break;
-      case 'voice':
-        noteData = { 
-          title: finalTitle, 
-          content: 'Nota de voz', // Esto sería reemplazado por la referencia a la grabación
-          type: 'voice',
-          recordingUri: 'placeholder-uri' // Aquí iría la URI real de la grabación
-        };
-        break;
-      default: // Nota de texto normal
-        noteData = { 
-          title: finalTitle, 
-          content,
-          type: 'text'
-        };
+    try {
+      switch (noteType) {
+        case 'checklist':
+          // Filtrar ítems vacíos y formatear
+          const filteredItems = checklistItems.filter(item => item.text.trim() !== '');
+          noteData = { 
+            title: finalTitle, 
+            content: '', // El contenido real son los ítems
+            type: 'checklist',
+            checklistItems: filteredItems
+          };
+          break;
+        case 'voice':
+          if (!recordingUri) {
+            Alert.alert("Error", "Debes grabar un audio antes de guardar");
+            return;
+          }
+          
+          setIsUploading(true);
+          // Subir archivo de audio a Supabase Storage
+          const uploadedUrl = await uploadAudioFile(recordingUri, session.user.id);
+          
+          noteData = { 
+            title: finalTitle, 
+            content: 'Nota de voz', 
+            type: 'voice',
+            recordingUri: uploadedUrl
+          };
+          setIsUploading(false);
+          break;
+        default: // Nota de texto normal
+          noteData = { 
+            title: finalTitle, 
+            content,
+            type: 'text'
+          };
+      }
+      
+      const newNote = await addNote(noteData);
+      router.replace(`/notes/${newNote.id}`);
+      
+    } catch (error) {
+      setIsUploading(false);
+      console.error('Error al guardar la nota:', error);
+      Alert.alert(
+        "Error",
+        "No se pudo guardar la nota. Por favor intenta nuevamente.",
+        [{ text: "OK" }]
+      );
     }
-    
-    const newNote = await addNote(noteData);
-    router.replace(`/notes/${newNote.id}`);
   };
 
   const handleCancel = () => {
@@ -118,30 +177,68 @@ export default function NewNoteScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
   
-  const startRecording = () => {
-    setIsRecording(true);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    
-    // Iniciar el contador de tiempo
-    const interval = setInterval(() => {
-      setRecordingTime(prev => prev + 1);
-    }, 1000);
-    
-    setRecordingTimer(interval);
-    
-    // Aquí iría la lógica real de grabación de audio
+  const startRecording = async () => {
+    try {
+      // Asegurarse de que la aplicación tiene los permisos necesarios
+      const permission = await Audio.requestPermissionsAsync();
+      if (permission.status !== 'granted') {
+        Alert.alert('Permiso denegado', 'No se puede grabar sin acceso al micrófono');
+        return;
+      }
+      
+      // Preparar la grabadora
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+      
+      // Iniciar nueva grabación
+      const { recording: newRecording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      
+      setRecording(newRecording);
+      setIsRecording(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      
+      // Iniciar el contador de tiempo
+      const interval = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+      
+      setRecordingTimer(interval);
+    } catch (error) {
+      console.error('Error al iniciar la grabación:', error);
+      Alert.alert('Error', 'No se pudo iniciar la grabación');
+    }
   };
   
-  const stopRecording = () => {
-    setIsRecording(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    
-    // Detener el contador
-    if (recordingTimer) {
-      clearInterval(recordingTimer);
+  const stopRecording = async () => {
+    try {
+      if (!recording) return;
+      
+      setIsRecording(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      
+      // Detener el contador
+      if (recordingTimer) {
+        clearInterval(recordingTimer);
+      }
+      
+      // Detener la grabación
+      await recording.stopAndUnloadAsync();
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+      
+      // Obtener URI de la grabación
+      const uri = recording.getURI();
+      setRecordingUri(uri);
+      setRecording(null);
+      
+      console.log('Grabación finalizada. URI:', uri);
+    } catch (error) {
+      console.error('Error al detener la grabación:', error);
+      Alert.alert('Error', 'No se pudo completar la grabación');
     }
-    
-    // Aquí iría la lógica para detener la grabación
   };
   
   const formatRecordingTime = (seconds) => {
@@ -173,8 +270,13 @@ export default function NewNoteScreen() {
         <TouchableOpacity 
           style={styles.saveButton} 
           onPress={handleSave}
+          disabled={isUploading}
         >
-          <Ionicons name="checkmark" size={24} color={colors.tint} />
+          {isUploading ? (
+            <ActivityIndicator size={24} color={colors.tint} />
+          ) : (
+            <Ionicons name="checkmark" size={24} color={colors.tint} />
+          )}
         </TouchableOpacity>
       </View>
       
@@ -255,6 +357,14 @@ export default function NewNoteScreen() {
                     <Text style={[styles.recordingText, { color: colors.error }]}>Grabando...</Text>
                     <Text style={{ color: colors.text }}>{formatRecordingTime(recordingTime)}</Text>
                   </>
+                ) : recordingUri ? (
+                  <>
+                    <Ionicons name="checkmark-circle" size={24} color={colors.success || 'green'} />
+                    <Text style={{ color: colors.text, marginTop: 8 }}>Audio grabado - {formatRecordingTime(recordingTime)}</Text>
+                    <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 4 }}>
+                      Puedes guardar la nota o grabar de nuevo
+                    </Text>
+                  </>
                 ) : (
                   <Text style={{ color: colors.text }}>Pulsa para comenzar a grabar</Text>
                 )}
@@ -262,12 +372,13 @@ export default function NewNoteScreen() {
               
               <TouchableOpacity 
                 style={[styles.recordButton, { 
-                  backgroundColor: isRecording ? colors.error : colors.tint 
+                  backgroundColor: isRecording ? colors.error : (recordingUri ? colors.success || 'green' : colors.tint)
                 }]}
                 onPress={isRecording ? stopRecording : startRecording}
+                disabled={isUploading}
               >
                 <Ionicons 
-                  name={isRecording ? "square-outline" : "mic"} 
+                  name={isRecording ? "square-outline" : (recordingUri ? "refresh" : "mic")} 
                   size={32} 
                   color="#fff" 
                 />

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, ScrollView, KeyboardAvoidingView, Platform, TextInput, TouchableOpacity, useColorScheme, Text } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useNotes } from '../../context/notes-context';
@@ -7,8 +7,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/Colors';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import ShareModal from './share-modal';
-import { Checkbox, IconButton } from 'react-native-paper';
+import { Checkbox, IconButton, Button, ActivityIndicator, Slider } from 'react-native-paper';
 import * as Haptics from 'expo-haptics';
+import { Audio } from 'expo-av';
 
 export default function NoteScreen() {
   const { id } = useLocalSearchParams();
@@ -28,6 +29,16 @@ export default function NoteScreen() {
   const [isMyNote, setIsMyNote] = useState(false);
   const [noteType, setNoteType] = useState('text');
   const [checklistItems, setChecklistItems] = useState([]);
+  const [recordingUri, setRecordingUri] = useState('');
+  
+  // Estados para el reproductor de audio
+  const [sound, setSound] = useState(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [position, setPosition] = useState(0);
+  const positionMillis = useRef(0);
+  const playbackUpdateInterval = useRef(null);
 
   useEffect(() => {
     if (id && id !== 'new') {
@@ -46,6 +57,10 @@ export default function NoteScreen() {
         if (noteToEdit.type === 'checklist' && noteToEdit.checklistItems) {
           setChecklistItems(noteToEdit.checklistItems);
         }
+        if (noteToEdit.type === 'voice' && noteToEdit.recordingUri) {
+          setRecordingUri(noteToEdit.recordingUri);
+          loadAudio(noteToEdit.recordingUri);
+        }
       } else {
         // Si no está en las propias, buscar en las compartidas
         noteToEdit = sharedNotes.find(note => note.id === id);
@@ -60,6 +75,10 @@ export default function NoteScreen() {
           if (noteToEdit.type === 'checklist' && noteToEdit.checklistItems) {
             setChecklistItems(noteToEdit.checklistItems);
           }
+          if (noteToEdit.type === 'voice' && noteToEdit.recordingUri) {
+            setRecordingUri(noteToEdit.recordingUri);
+            loadAudio(noteToEdit.recordingUri);
+          }
           
           // Verificar si la nota es de solo lectura o lectura/escritura
           const isReadOnly = noteToEdit.permission === 'read';
@@ -72,6 +91,12 @@ export default function NoteScreen() {
       setIsMyNote(true);
       setIsSharedNote(false);
     }
+    
+    // Limpiar cuando se desmonta el componente
+    return () => {
+      unloadAudio();
+      clearInterval(playbackUpdateInterval.current);
+    };
   }, [id, notes, sharedNotes]);
 
   useEffect(() => {
@@ -100,6 +125,92 @@ export default function NoteScreen() {
       }
     }
   }, [title, content, checklistItems, initialNote, noteType]);
+  
+  const loadAudio = async (uri) => {
+    try {
+      setIsLoading(true);
+      
+      // Descargar y preparar el audio
+      const { sound: newSound } = await Audio.Sound.createAsync(
+        { uri },
+        { shouldPlay: false },
+        onPlaybackStatusUpdate
+      );
+      
+      setSound(newSound);
+      
+      // Preparar para reproducir
+      await newSound.setProgressUpdateIntervalAsync(200); // Actualizar cada 200ms
+      await newSound.setVolumeAsync(1.0);
+      
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error al cargar el audio:', error);
+      setIsLoading(false);
+    }
+  };
+  
+  const unloadAudio = async () => {
+    if (sound) {
+      try {
+        await sound.stopAsync();
+        await sound.unloadAsync();
+        setSound(null);
+        setIsPlaying(false);
+      } catch (error) {
+        console.error('Error al descargar el audio:', error);
+      }
+    }
+  };
+  
+  const onPlaybackStatusUpdate = (status) => {
+    if (status.isLoaded) {
+      if (status.durationMillis) {
+        setDuration(status.durationMillis);
+      }
+      
+      positionMillis.current = status.positionMillis;
+      setPosition(status.positionMillis);
+      
+      if (status.didJustFinish) {
+        setIsPlaying(false);
+      }
+    }
+  };
+  
+  const handlePlayPause = async () => {
+    if (!sound) return;
+    
+    try {
+      if (isPlaying) {
+        await sound.pauseAsync();
+      } else {
+        await sound.playFromPositionAsync(positionMillis.current);
+      }
+      setIsPlaying(!isPlaying);
+    } catch (error) {
+      console.error('Error al reproducir/pausar el audio:', error);
+    }
+  };
+  
+  const handleSeek = async (value) => {
+    if (!sound) return;
+    
+    try {
+      positionMillis.current = value;
+      await sound.setPositionAsync(value);
+      setPosition(value);
+    } catch (error) {
+      console.error('Error al buscar en el audio:', error);
+    }
+  };
+  
+  const formatTime = (millis) => {
+    const totalSeconds = Math.floor(millis / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+  };
 
   const handleSave = async () => {
     if (id === 'new') {
@@ -336,10 +447,54 @@ export default function NoteScreen() {
 
           {noteType === 'voice' && (
             <View style={styles.voiceContainer}>
-              <Text style={{ color: colors.text, textAlign: 'center' }}>
-                Nota de voz
-              </Text>
-              {/* Aquí iría el reproductor de audio */}
+              {isLoading ? (
+                <ActivityIndicator size="large" color={colors.primary || colors.tint} />
+              ) : recordingUri ? (
+                <View style={styles.audioPlayerContainer}>
+                  <View style={styles.playerControls}>
+                    <TouchableOpacity
+                      onPress={handlePlayPause}
+                      style={[styles.playButton, {
+                        backgroundColor: colors.primary || colors.tint,
+                      }]}
+                    >
+                      <Ionicons 
+                        name={isPlaying ? "pause" : "play"} 
+                        size={28} 
+                        color="white" 
+                      />
+                    </TouchableOpacity>
+                    
+                    <View style={styles.progressContainer}>
+                      <Slider
+                        value={position}
+                        minimumValue={0}
+                        maximumValue={duration > 0 ? duration : 1}
+                        onValueChange={handleSeek}
+                        minimumTrackTintColor={colors.primary || colors.tint}
+                        maximumTrackTintColor={colorScheme === 'dark' ? '#555' : '#ccc'}
+                        thumbTintColor={colors.primary || colors.tint}
+                        style={{ width: '100%' }}
+                      />
+                      <View style={styles.timeInfo}>
+                        <Text style={{ color: colors.text }}>{formatTime(position)}</Text>
+                        <Text style={{ color: colors.text }}>{formatTime(duration)}</Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.noAudioContainer}>
+                  <Ionicons
+                    name="alert-circle-outline"
+                    size={48}
+                    color={colors.error || 'red'}
+                  />
+                  <Text style={[styles.noAudioText, { color: colors.text }]}>
+                    No se encontró el audio de esta nota
+                  </Text>
+                </View>
+              )}
             </View>
           )}
         </ScrollView>
@@ -458,5 +613,44 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 16,
+    minHeight: 200,
+  },
+  audioPlayerContainer: {
+    width: '100%',
+    backgroundColor: 'transparent',
+    borderRadius: 12,
+    padding: 16,
+  },
+  playerControls: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  playButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  progressContainer: {
+    flex: 1,
+  },
+  timeInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  noAudioContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  noAudioText: {
+    marginTop: 12,
+    fontSize: 16,
+    textAlign: 'center',
   }
 }); 
