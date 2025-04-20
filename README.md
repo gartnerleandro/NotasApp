@@ -1,48 +1,97 @@
 # NotasApp
 
-Aplicación de notas con autenticación y almacenamiento en la nube usando Supabase.
+NotasApp es una aplicación móvil completa para la gestión de notas con autenticación de usuarios y almacenamiento en la nube mediante Supabase. Diseñada para ser intuitiva y potente, permite organizar tus ideas, tareas y recordatorios de forma segura y accesible desde cualquier dispositivo.
 
-## Características
+## ¿En qué consiste NotasApp?
 
-- Autenticación de usuarios con email y contraseña
-- Gestión de perfil de usuario
-- Creación, edición y eliminación de notas
-- Búsqueda de notas
-- Modo claro/oscuro
-- Almacenamiento en la nube
+NotasApp ha sido desarrollada para facilitar la organización personal y profesional mediante un sistema de notas digitales con las siguientes ventajas:
+
+- **Acceso seguro**: Sistema de autenticación robusto que protege tus datos personales
+- **Disponibilidad constante**: Sincronización en la nube que permite acceder a tus notas desde cualquier dispositivo
+- **Interfaz adaptable**: Diseño que se ajusta perfectamente a móviles, tablets y ordenadores
+- **Personalización**: Modo claro/oscuro para adaptar la interfaz a tus preferencias
+
+## Guía de usuario (español de España)
+
+### Registro e inicio de sesión
+
+1. Abre la aplicación NotasApp en tu móvil o tablet
+2. Selecciona "Crear cuenta" e introduce tu correo electrónico y contraseña
+3. Verifica tu correo electrónico haciendo clic en el enlace recibido
+4. Vuelve a la aplicación e inicia sesión con tus credenciales
+
+### Crear y gestionar notas
+
+1. Pulsa el botón "+" en la pantalla principal para crear una nueva nota
+2. Introduce un título descriptivo y el contenido de tu nota
+3. La nota se guardará automáticamente mientras escribes
+4. Para editar una nota existente, simplemente púlsala en la lista
+5. Para eliminar una nota, desliza hacia la izquierda sobre ella en la lista y pulsa "Eliminar"
+
+### Búsqueda de notas
+
+1. Utiliza la barra de búsqueda en la parte superior de la pantalla principal
+2. Escribe palabras clave relacionadas con el contenido o título de tus notas
+3. Los resultados se mostrarán instantáneamente mientras escribes
+
+### Personalización de la interfaz
+
+1. Accede a la configuración desde el menú de perfil
+2. Selecciona "Apariencia" para cambiar entre modo claro y oscuro
+3. Ajusta el tamaño de texto según tus preferencias visuales
 
 ## Compartir Notas
 
-NotasApp permite a los usuarios compartir sus notas con otros usuarios registrados en la aplicación. Esta funcionalidad facilita la colaboración y el intercambio de información.
+NotasApp permite compartir tus notas con otros usuarios registrados en la aplicación, facilitando la colaboración y el intercambio de información.
 
 ### Características principales
 
-- **Permisos de acceso**: Puedes compartir notas con permisos de solo lectura o lectura/escritura
-- **Gestión de permisos**: Añadir o eliminar usuarios con acceso a tus notas
-- **Interfaz intuitiva**: Buscar usuarios y gestionar permisos desde una interfaz sencilla
-- **Sección dedicada**: Ver las notas que otros han compartido contigo en una sección separada
+- **Permisos personalizables**: Comparte notas con permisos de solo lectura o lectura/escritura
+- **Gestión de colaboradores**: Añade o elimina usuarios con acceso a tus notas
+- **Interfaz intuitiva**: Busca usuarios y gestiona permisos desde una interfaz sencilla
+- **Organización clara**: Visualiza las notas que otros han compartido contigo en una sección específica
 
 ### Cómo compartir una nota
 
 1. Abre una nota que hayas creado
-2. Toca el icono de compartir en la esquina superior derecha
+2. Pulsa el icono de compartir en la esquina superior derecha
 3. Busca usuarios por nombre de usuario
 4. Selecciona el permiso que deseas otorgar (lectura o escritura)
-5. Toca "Compartir" para confirmar
+5. Pulsa "Compartir" para confirmar
 
 ### Gestión de permisos
 
 Para gestionar quién tiene acceso a tus notas:
-- Abre una nota y toca el icono de compartir
+- Abre una nota y pulsa el icono de compartir
 - Verás la lista de usuarios con acceso a la nota
-- Puedes eliminar usuarios tocando el icono X junto a su nombre
+- Puedes eliminar usuarios pulsando el icono X junto a su nombre
 
 ### Notas compartidas contigo
 
-Las notas que otros usuarios han compartido contigo aparecen en una sección separada en la pantalla principal. Estas notas están marcadas con un borde de color y un icono para distinguirlas.
+Las notas que otros usuarios han compartido contigo aparecen en una sección independiente en la pantalla principal. Estas notas están identificadas con un borde de color y un icono distintivo.
 
-- Si tienes permisos de solo lectura, podrás ver pero no editar la nota
-- Si tienes permisos de lectura/escritura, podrás editar la nota
+- Si tienes permisos de solo lectura, podrás visualizar pero no modificar la nota
+- Si tienes permisos de lectura/escritura, podrás editar la nota libremente
+
+## Solución de problemas comunes
+
+### La aplicación no se sincroniza correctamente
+
+1. Comprueba tu conexión a Internet
+2. Cierra la aplicación completamente y vuelve a abrirla
+3. Verifica que has iniciado sesión correctamente
+
+### No puedo acceder a mi cuenta
+
+1. Asegúrate de estar utilizando el correo electrónico correcto
+2. Utiliza la opción "He olvidado mi contraseña" para restablecerla
+3. Comprueba tu bandeja de entrada y carpeta de spam para el correo de restablecimiento
+
+### Las notas compartidas no aparecen
+
+1. Pide al usuario que ha compartido la nota que verifique los permisos
+2. Actualiza la lista deslizando hacia abajo en la pantalla principal
+3. Cierra sesión y vuelve a iniciar sesión si el problema persiste
 
 ## Detalles técnicos
 
@@ -64,27 +113,27 @@ CREATE TABLE note_shares (
 
 ### Seguridad
 
-La funcionalidad utiliza Row Level Security (RLS) para garantizar que los usuarios solo puedan:
+La aplicación utiliza Row Level Security (RLS) para garantizar que los usuarios solo puedan:
 - Ver notas que les pertenecen o que han sido compartidas con ellos
 - Editar notas propias o compartidas con permisos de escritura
-- Compartir solo notas de su propiedad
+- Compartir únicamente notas de su propiedad
 
-## Tecnologías
+## Tecnologías utilizadas
 
 - React Native con Expo
 - TypeScript/JavaScript
 - Supabase para autenticación y base de datos
 - Expo Router para navegación
-- React Native Paper para componentes de UI
+- React Native Paper para componentes de interfaz
 
 ## Requisitos previos
 
-- Node.js (v14 o superior)
+- Node.js (versión 14 o superior)
 - npm o yarn
 - Cuenta en Supabase (gratuita)
 - Expo CLI (`npm install -g expo-cli`)
 
-## Configuración
+## Configuración para desarrolladores
 
 ### 1. Clonar el repositorio
 
@@ -101,40 +150,46 @@ npm install
 
 ### 3. Configurar Supabase
 
-1. Crear una cuenta en [Supabase](https://supabase.com/) si aún no tienes una
-2. Crear un nuevo proyecto
-3. Obtener la URL del proyecto y la clave anónima (Anon Key) desde la sección de configuración de API
-4. Reemplazar las credenciales en `lib/supabase.ts`:
+1. Crea una cuenta en [Supabase](https://supabase.com/) si aún no dispones de una
+2. Crea un nuevo proyecto
+3. Obtén la URL del proyecto y la clave anónima (Anon Key) desde la sección de configuración de API
+4. Sustituye las credenciales en el archivo `.env.local`:
 
-```typescript
-const supabaseUrl = 'TU_URL_DE_SUPABASE';
-const supabaseAnonKey = 'TU_CLAVE_ANON_DE_SUPABASE';
+```
+EXPO_PUBLIC_SUPABASE_URL=TU_URL_DE_SUPABASE
+EXPO_PUBLIC_SUPABASE_ANON_KEY=TU_CLAVE_ANON_DE_SUPABASE
 ```
 
 ### 4. Configurar la base de datos
 
-1. Ve a la sección SQL Editor en el dashboard de Supabase
+1. Ve a la sección SQL Editor en el panel de control de Supabase
 2. Ejecuta el script SQL que se encuentra en `sql/init.sql`
    - Este script creará las tablas necesarias y configurará las políticas de seguridad
 
 ### 5. Configurar la autenticación en Supabase
 
-1. Ve a la sección Authentication > Settings en el dashboard de Supabase
+1. Ve a la sección Authentication > Settings en el panel de control de Supabase
 2. Asegúrate de tener habilitado el proveedor de Email
 3. Configura la URL de redirección para deep linking: `notasapp://`
-4. Opcional: Deshabilitar temporalmente la confirmación de email para pruebas (no recomendado para producción)
+4. Opcional: Desactiva temporalmente la confirmación de email para pruebas (no recomendado para entornos de producción)
 
 ## Ejecutar la aplicación
 
+### En Windows:
+```bash
+npm run start:win
+```
+
+### En macOS/Linux:
 ```bash
 npm start
 ```
 
 Sigue las instrucciones en la terminal para abrir la aplicación en:
-- Simulador iOS (presiona i)
-- Simulador Android (presiona a)
-- Web (presiona w)
-- Tu dispositivo físico escaneando el código QR con la app Expo Go
+- Simulador iOS (pulsa i)
+- Simulador Android (pulsa a)
+- Navegador web (pulsa w)
+- Tu dispositivo físico escaneando el código QR con la aplicación Expo Go
 
 ## Estructura del proyecto
 
@@ -146,6 +201,12 @@ Sigue las instrucciones en la terminal para abrir la aplicación en:
 - `lib/` - Utilidades y configuración
   - `supabase.ts` - Cliente de Supabase
 - `sql/` - Scripts SQL para configurar la base de datos
+
+## Soporte y contacto
+
+Si tienes problemas o sugerencias para mejorar NotasApp, puedes:
+- Abrir un issue en el repositorio de GitHub
+- Contactar con el equipo de desarrollo en soporte@notasapp.com
 
 ## Licencia
 

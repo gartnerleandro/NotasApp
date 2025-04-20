@@ -6,9 +6,9 @@ alwaysApply: true
 # Modos
 
 ## Plan
-Cada vez que te diga /plan o usa el modo plan, me refiero al modo plan configurado en el archivo [memoria.mdc](mdc:.cursor/rules/memoria.mdc)
+Cada vez que te diga /plan o usa el modo plan, me refiero al modo plan configurado en el archivo [memoria.mdc](mdc:.cursor/rules/memoria.mdc) utiliza la tool de pinecone.
 
 ## Act
-Cada vez que te diga /act o usa el modo act, me refiero al modo act configurado en el archivo [memoria.mdc](mdc:.cursor/rules/memoria.mdc)
+Cada vez que te diga /act o usa el modo act, me refiero al modo act configurado en el archivo [memoria.mdc](mdc:.cursor/rules/memoria.mdc) utiliza la tool de pinecone.
 
-Cuando utilices cualquiera de estos dos modos debes seguir específicamete los pasos del archivo [memoria.mdc](mdc:.cursor/rules/memoria.mdc) para cada modo.
+Cuando utilices cualquiera de estos dos modos debes seguir específicamete los pasos del archivo [memoria.mdc](mdc:.cursor/rules/memoria.mdc) para cada modo y utiliza la tool de pinecone.
