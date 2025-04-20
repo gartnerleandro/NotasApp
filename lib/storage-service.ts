@@ -15,54 +15,73 @@ export async function uploadAudioFile(uri: string, userId: string): Promise<stri
     const bucketName = 'audio-notes';
     const filePath = `${userId}/${fileName}`;
     
-    // Preparar el archivo para subir
-    let fileToUpload;
+    // Método diferente según la plataforma
     if (Platform.OS === 'web') {
-      // Manejo para web (si es necesario)
+      // Manejo para web
       const response = await fetch(uri);
-      fileToUpload = await response.blob();
+      const fileToUpload = await response.blob();
+      
+      // Subir el archivo a Supabase Storage
+      const { data, error } = await supabase.storage
+        .from(bucketName)
+        .upload(filePath, fileToUpload, {
+          contentType: 'audio/mp4',
+          upsert: true,
+        });
+      
+      if (error) {
+        throw error;
+      }
     } else {
-      // Convertir el archivo a base64 para dispositivos móviles
+      // Para dispositivos móviles, usar FileSystem.uploadAsync
+      // que funciona directamente con URIs de archivo local
+      console.log(`Subiendo archivo desde: ${uri}`);
+      
+      // Verificar que el archivo existe
       const fileInfo = await FileSystem.getInfoAsync(uri);
       if (!fileInfo.exists) {
         throw new Error('El archivo de audio no existe');
       }
       
-      const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      // Crear una URL firmada para subir
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from(bucketName)
+        .createSignedUploadUrl(filePath);
       
-      // Convertir base64 a Blob
-      const byteCharacters = atob(base64);
-      const byteArrays = [];
-      for (let offset = 0; offset < byteCharacters.length; offset += 512) {
-        const slice = byteCharacters.slice(offset, offset + 512);
-        const byteNumbers = new Array(slice.length);
-        for (let i = 0; i < slice.length; i++) {
-          byteNumbers[i] = slice.charCodeAt(i);
-        }
-        const byteArray = new Uint8Array(byteNumbers);
-        byteArrays.push(byteArray);
+      if (uploadError) {
+        throw uploadError;
       }
-      fileToUpload = new Blob(byteArrays, { type: 'audio/mp4' });
-    }
-    
-    // Subir el archivo a Supabase Storage
-    const { data, error } = await supabase.storage
-      .from(bucketName)
-      .upload(filePath, fileToUpload, {
-        contentType: 'audio/mp4',
-        upsert: true,
-      });
-    
-    if (error) {
-      throw error;
+      
+      // Subir el archivo usando Expo FileSystem
+      const uploadResult = await FileSystem.uploadAsync(
+        uploadData.signedUrl,
+        uri,
+        {
+          httpMethod: 'PUT',
+          headers: {
+            'Content-Type': 'audio/mp4',
+          },
+        }
+      );
+      
+      if (uploadResult.status !== 200) {
+        throw new Error(`Error al subir archivo: ${uploadResult.status}`);
+      }
+      
+      console.log('Archivo subido correctamente');
     }
     
     // Obtener la URL pública del archivo
     const { data: publicUrlData } = supabase.storage
       .from(bucketName)
       .getPublicUrl(filePath);
+    
+    console.log('URL del audio:', publicUrlData.publicUrl);
+    
+    // Asegurarse de que la URL sea válida
+    if (!publicUrlData || !publicUrlData.publicUrl) {
+      throw new Error('No se pudo obtener la URL pública del archivo de audio');
+    }
     
     return publicUrlData.publicUrl;
   } catch (error) {

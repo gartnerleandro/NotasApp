@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, ScrollView, KeyboardAvoidingView, Platform, TextInput, TouchableOpacity, useColorScheme, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useNotes } from '../../context/notes-context';
@@ -8,7 +8,7 @@ import { Colors } from '@/constants/Colors';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import { Checkbox, Text, List, IconButton, useTheme, ActivityIndicator } from 'react-native-paper';
 import * as Haptics from 'expo-haptics';
-import { Audio } from 'expo-av';
+import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { useAuth } from '../../context/auth-context';
 import { uploadAudioFile } from '../../lib/storage-service';
 
@@ -26,12 +26,17 @@ export default function NewNoteScreen() {
   const [content, setContent] = useState('');
   const [noteType, setNoteType] = useState('text');
   const [checklistItems, setChecklistItems] = useState([{ text: '', checked: false }]);
-  const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
-  const [recordingTimer, setRecordingTimer] = useState(null);
-  const [recording, setRecording] = useState(null);
-  const [recordingUri, setRecordingUri] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState(null);
+  
+  // Estado para grabación de audio
+  const [recording, setRecording] = useState(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingUri, setRecordingUri] = useState(null);
+  
+  // Usar un ref para evitar limpiezas no deseadas durante la grabación
+  const isCleaningUpRef = useRef(false);
   
   useEffect(() => {
     // Determinar el tipo de nota basado en los parámetros
@@ -58,19 +63,105 @@ export default function NewNoteScreen() {
     
     // Limpiar al desmontar el componente
     return () => {
-      if (recordingTimer) {
-        clearInterval(recordingTimer);
-      }
-      if (recording) {
-        stopRecording();
+      if (!isRecording) {
+        cleanupRecording();
       }
     };
   }, [params]);
   
+  // Configurar el modo de audio cuando se monta el componente
+  useEffect(() => {
+    if (params.type === 'voice') {
+      setupAudioMode();
+    }
+    
+    // Limpiar al desmontar
+    return () => {
+      resetAudioMode();
+    };
+  }, []);
+  
+  // Establecer el modo de audio para grabación
+  const setupAudioMode = async () => {
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+        interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+        staysActiveInBackground: true,
+      });
+      console.log('Modo de audio configurado correctamente');
+    } catch (error) {
+      console.error('Error al configurar modo de audio:', error);
+      setError('Error al configurar modo de audio: ' + error.message);
+    }
+  };
+  
+  // Restablecer el modo de audio
+  const resetAudioMode = async () => {
+    try {
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+        interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+        staysActiveInBackground: false,
+      });
+    } catch (error) {
+      console.error('Error al restablecer modo de audio:', error);
+    }
+  };
+  
+  // Contador para el tiempo de grabación
+  useEffect(() => {
+    let intervalId = null;
+    
+    if (isRecording) {
+      intervalId = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+    }
+    
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [isRecording]);
+  
+  const cleanupRecording = async () => {
+    // Evitar limpiezas repetidas
+    if (isCleaningUpRef.current || !recording) {
+      return;
+    }
+    
+    try {
+      isCleaningUpRef.current = true;
+      
+      // Solo descargar si la grabación aún está cargada
+      if (recording._cleanupForUnloadedRecorder) {
+        await recording.stopAndUnloadAsync();
+      }
+      
+      setRecording(null);
+      setIsRecording(false);
+      isCleaningUpRef.current = false;
+    } catch (error) {
+      console.log("Error al limpiar grabación:", error);
+      isCleaningUpRef.current = false;
+    }
+  };
+  
   const requestAudioPermissions = async () => {
     try {
-      const { granted } = await Audio.requestPermissionsAsync();
-      if (!granted) {
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) {
+        setError('No se concedió permiso para acceder al micrófono');
         Alert.alert(
           "Permisos requeridos",
           "Necesitamos acceso al micrófono para grabar notas de voz.",
@@ -79,6 +170,91 @@ export default function NewNoteScreen() {
       }
     } catch (error) {
       console.error('Error al solicitar permisos de audio:', error);
+      setError('Error al solicitar permisos: ' + error.message);
+    }
+  };
+  
+  const startRecording = async () => {
+    try {
+      // Limpiar errores anteriores
+      setError(null);
+      
+      // Verificar permisos
+      const permission = await Audio.requestPermissionsAsync();
+      if (!permission.granted) {
+        setError('No se concedió permiso para acceder al micrófono');
+        Alert.alert('Permiso denegado', 'No se puede grabar sin acceso al micrófono');
+        return;
+      }
+      
+      // Reiniciar contador de tiempo
+      setRecordingTime(0);
+      
+      // Asegurarse de que cualquier grabación anterior se ha detenido correctamente
+      if (recording !== null) {
+        await cleanupRecording();
+      }
+      
+      // Volver a configurar el modo de audio para asegurarnos de que está correcto
+      await setupAudioMode();
+      
+      console.log('Iniciando grabación...');
+      
+      // Crear una nueva grabación
+      const { recording: newRecording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      
+      // Establecer el estado después de que la grabación se haya creado correctamente
+      setRecording(newRecording);
+      setIsRecording(true);
+      setRecordingUri(null);
+      
+      console.log('Grabación iniciada correctamente');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      
+    } catch (error) {
+      console.error('Error al iniciar la grabación:', error);
+      setError('Error al iniciar la grabación: ' + error.message);
+      Alert.alert('Error', 'No se pudo iniciar la grabación: ' + error.message);
+    }
+  };
+  
+  const stopRecording = async () => {
+    if (!recording || !isRecording) {
+      console.log('No hay grabación activa para detener');
+      return;
+    }
+    
+    try {
+      console.log('Deteniendo grabación...');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      
+      // Indicar que la grabación está detenida antes de la operación
+      setIsRecording(false);
+      
+      // Detener la grabación
+      await recording.stopAndUnloadAsync();
+      
+      // Obtener URI de la grabación
+      const uri = recording.getURI();
+      if (uri) {
+        setRecordingUri(uri);
+        console.log('Grabación finalizada. URI:', uri);
+      } else {
+        throw new Error('No se pudo obtener el URI de la grabación');
+      }
+      
+      // Limpiar el objeto de grabación pero mantener la URI
+      setRecording(null);
+      
+    } catch (error) {
+      console.error('Error al detener la grabación:', error);
+      setError('Error al detener la grabación: ' + error.message);
+      Alert.alert('Error', 'No se pudo completar la grabación: ' + error.message);
+      // Asegurarse de limpiar si hay un error
+      setRecording(null);
+      setIsRecording(false);
     }
   };
   
@@ -113,15 +289,32 @@ export default function NewNoteScreen() {
           }
           
           setIsUploading(true);
-          // Subir archivo de audio a Supabase Storage
-          const uploadedUrl = await uploadAudioFile(recordingUri, session.user.id);
-          
-          noteData = { 
-            title: finalTitle, 
-            content: 'Nota de voz', 
-            type: 'voice',
-            recordingUri: uploadedUrl
-          };
+          try {
+            // Subir archivo de audio a Supabase Storage
+            console.log('Subiendo archivo de audio:', recordingUri);
+            const uploadedUrl = await uploadAudioFile(recordingUri, session.user.id);
+            console.log('URL de audio subido:', uploadedUrl);
+            
+            if (!uploadedUrl) {
+              throw new Error('No se pudo obtener URL del archivo subido');
+            }
+            
+            noteData = { 
+              title: finalTitle, 
+              content: 'Nota de voz', 
+              type: 'voice',
+              recordingUri: uploadedUrl
+            };
+          } catch (uploadError) {
+            console.error('Error al subir audio:', uploadError);
+            Alert.alert(
+              "Error",
+              "No se pudo subir el archivo de audio. Por favor, intenta nuevamente.",
+              [{ text: "OK" }]
+            );
+            setIsUploading(false);
+            return;
+          }
           setIsUploading(false);
           break;
         default: // Nota de texto normal
@@ -133,6 +326,8 @@ export default function NewNoteScreen() {
       }
       
       const newNote = await addNote(noteData);
+      
+      // No es necesario limpiar la grabación aquí ya que ya la limpiamos al detener
       router.replace(`/notes/${newNote.id}`);
       
     } catch (error) {
@@ -146,7 +341,9 @@ export default function NewNoteScreen() {
     }
   };
 
-  const handleCancel = () => {
+  const handleCancel = async () => {
+    // Limpiar grabación antes de cancelar
+    await cleanupRecording();
     router.back();
   };
   
@@ -175,70 +372,6 @@ export default function NewNoteScreen() {
     newItems[index].checked = !newItems[index].checked;
     setChecklistItems(newItems);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  };
-  
-  const startRecording = async () => {
-    try {
-      // Asegurarse de que la aplicación tiene los permisos necesarios
-      const permission = await Audio.requestPermissionsAsync();
-      if (permission.status !== 'granted') {
-        Alert.alert('Permiso denegado', 'No se puede grabar sin acceso al micrófono');
-        return;
-      }
-      
-      // Preparar la grabadora
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-      });
-      
-      // Iniciar nueva grabación
-      const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      
-      setRecording(newRecording);
-      setIsRecording(true);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      
-      // Iniciar el contador de tiempo
-      const interval = setInterval(() => {
-        setRecordingTime(prev => prev + 1);
-      }, 1000);
-      
-      setRecordingTimer(interval);
-    } catch (error) {
-      console.error('Error al iniciar la grabación:', error);
-      Alert.alert('Error', 'No se pudo iniciar la grabación');
-    }
-  };
-  
-  const stopRecording = async () => {
-    try {
-      if (!recording) return;
-      
-      setIsRecording(false);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      
-      // Detener el contador
-      if (recordingTimer) {
-        clearInterval(recordingTimer);
-      }
-      
-      // Detener la grabación
-      await recording.stopAndUnloadAsync();
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
-      
-      // Obtener URI de la grabación
-      const uri = recording.getURI();
-      setRecordingUri(uri);
-      setRecording(null);
-      
-      console.log('Grabación finalizada. URI:', uri);
-    } catch (error) {
-      console.error('Error al detener la grabación:', error);
-      Alert.alert('Error', 'No se pudo completar la grabación');
-    }
   };
   
   const formatRecordingTime = (seconds) => {
@@ -351,6 +484,12 @@ export default function NewNoteScreen() {
           
           {noteType === 'voice' && (
             <View style={styles.voiceContainer}>
+              {error && (
+                <View style={[styles.errorContainer, { backgroundColor: colors.errorBackground || '#FFDDDD' }]}>
+                  <Text style={{ color: colors.error || 'red' }}>{error}</Text>
+                </View>
+              )}
+              
               <View style={[styles.recordingInfo, { backgroundColor: colorScheme === 'dark' ? '#333' : '#F0F0F0' }]}>
                 {isRecording ? (
                   <>
@@ -372,7 +511,9 @@ export default function NewNoteScreen() {
               
               <TouchableOpacity 
                 style={[styles.recordButton, { 
-                  backgroundColor: isRecording ? colors.error : (recordingUri ? colors.success || 'green' : colors.tint)
+                  backgroundColor: isRecording 
+                    ? colors.error 
+                    : (recordingUri ? colors.success || 'green' : colors.tint)
                 }]}
                 onPress={isRecording ? stopRecording : startRecording}
                 disabled={isUploading}
@@ -478,5 +619,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 20,
+  },
+  errorContainer: {
+    width: '100%',
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 10,
   }
 }); 

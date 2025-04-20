@@ -7,7 +7,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/Colors';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import ShareModal from './share-modal';
-import { Checkbox, IconButton, Button, ActivityIndicator, Slider } from 'react-native-paper';
+import { Checkbox, IconButton, Button, ActivityIndicator } from 'react-native-paper';
+import Slider from '@react-native-community/slider';
 import * as Haptics from 'expo-haptics';
 import { Audio } from 'expo-av';
 
@@ -37,6 +38,7 @@ export default function NoteScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [duration, setDuration] = useState(0);
   const [position, setPosition] = useState(0);
+  const [error, setError] = useState(null);
   const positionMillis = useRef(0);
   const playbackUpdateInterval = useRef(null);
 
@@ -47,37 +49,57 @@ export default function NoteScreen() {
       
       if (noteToEdit) {
         console.log('Nota encontrada en notas propias:', noteToEdit);
+        
+        // Extraer datos tanto del objeto principal como del metadata si existe
+        const noteType = noteToEdit.type || (noteToEdit.metadata && noteToEdit.metadata.type) || 'text';
+        const noteRecordingUri = noteToEdit.recordingUri || (noteToEdit.metadata && noteToEdit.metadata.recordingUri) || '';
+        const noteChecklistItems = noteToEdit.checklistItems || (noteToEdit.metadata && noteToEdit.metadata.checklistItems) || [];
+        
         setTitle(noteToEdit.title);
         setContent(noteToEdit.content);
         setInitialNote(noteToEdit);
         setIsSharedNote(false);
         setIsMyNote(true);
         setReadOnlyMode(false);
-        setNoteType(noteToEdit.type || 'text');
-        if (noteToEdit.type === 'checklist' && noteToEdit.checklistItems) {
-          setChecklistItems(noteToEdit.checklistItems);
+        setNoteType(noteType);
+        
+        if (noteType === 'checklist' && noteChecklistItems.length > 0) {
+          setChecklistItems(noteChecklistItems);
         }
-        if (noteToEdit.type === 'voice' && noteToEdit.recordingUri) {
-          setRecordingUri(noteToEdit.recordingUri);
-          loadAudio(noteToEdit.recordingUri);
+        
+        if (noteType === 'voice' && noteRecordingUri) {
+          setRecordingUri(noteRecordingUri);
+          console.log('Cargando URI de audio:', noteRecordingUri);
+          // Verificar y cargar el audio
+          verifyAndLoadAudio(noteRecordingUri);
         }
       } else {
         // Si no está en las propias, buscar en las compartidas
         noteToEdit = sharedNotes.find(note => note.id === id);
         if (noteToEdit) {
           console.log('Nota encontrada en notas compartidas:', noteToEdit);
+          
+          // Extraer datos tanto del objeto principal como del metadata si existe
+          const noteType = noteToEdit.type || (noteToEdit.metadata && noteToEdit.metadata.type) || 'text';
+          const noteRecordingUri = noteToEdit.recordingUri || (noteToEdit.metadata && noteToEdit.metadata.recordingUri) || '';
+          const noteChecklistItems = noteToEdit.checklistItems || (noteToEdit.metadata && noteToEdit.metadata.checklistItems) || [];
+          
           setTitle(noteToEdit.title);
           setContent(noteToEdit.content);
           setInitialNote(noteToEdit);
           setIsSharedNote(true);
           setIsMyNote(false);
-          setNoteType(noteToEdit.type || 'text');
-          if (noteToEdit.type === 'checklist' && noteToEdit.checklistItems) {
-            setChecklistItems(noteToEdit.checklistItems);
+          setNoteType(noteType);
+          
+          if (noteType === 'checklist' && noteChecklistItems.length > 0) {
+            setChecklistItems(noteChecklistItems);
           }
-          if (noteToEdit.type === 'voice' && noteToEdit.recordingUri) {
-            setRecordingUri(noteToEdit.recordingUri);
-            loadAudio(noteToEdit.recordingUri);
+          
+          if (noteType === 'voice' && noteRecordingUri) {
+            setRecordingUri(noteRecordingUri);
+            console.log('Cargando URI de audio:', noteRecordingUri);
+            // Verificar y cargar el audio
+            verifyAndLoadAudio(noteRecordingUri);
           }
           
           // Verificar si la nota es de solo lectura o lectura/escritura
@@ -128,68 +150,228 @@ export default function NoteScreen() {
   
   const loadAudio = async (uri) => {
     try {
+      console.log('===== INICIO DE CARGA DE AUDIO =====');
+      console.log('URI recibida:', uri);
+      
+      if (!uri) {
+        console.log('Error: No se proporcionó URI para cargar el audio');
+        setError('No se proporcionó URI para cargar el audio');
+        setIsLoading(false);
+        return;
+      }
+      
       setIsLoading(true);
+      setError(null);
+      console.log('Cargando audio desde:', uri);
       
-      // Descargar y preparar el audio
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri },
-        { shouldPlay: false },
-        onPlaybackStatusUpdate
-      );
-      
-      setSound(newSound);
-      
-      // Preparar para reproducir
-      await newSound.setProgressUpdateIntervalAsync(200); // Actualizar cada 200ms
-      await newSound.setVolumeAsync(1.0);
-      
-      setIsLoading(false);
+      try {
+        // Limpiar cualquier reproductor de audio anterior
+        console.log('Limpiando reproductor anterior...');
+        await unloadAudio();
+        
+        // Configurar el modo de audio
+        console.log('Configurando modo de audio...');
+        await Audio.setAudioModeAsync({
+          allowsRecordingIOS: false,
+          playsInSilentModeIOS: true,
+          staysActiveInBackground: true,
+          interruptionModeIOS: 1,
+          interruptionModeAndroid: 1,
+          shouldDuckAndroid: true,
+          playThroughEarpieceAndroid: false
+        });
+        console.log('Modo de audio configurado correctamente');
+        
+        // Crear nuevo objeto de sonido con manejo de excepciones
+        console.log('Creando objeto de sonido...');
+        let soundObject;
+        try {
+          soundObject = new Audio.Sound();
+          console.log('Objeto de sonido creado correctamente');
+        } catch (error) {
+          console.error('Error al crear el objeto de sonido:', error);
+          setError('No se pudo inicializar el reproductor de audio');
+          setIsLoading(false);
+          return;
+        }
+        
+        // Configurar el callback de estado
+        console.log('Configurando callback de estado...');
+        soundObject.setOnPlaybackStatusUpdate(onPlaybackStatusUpdate);
+        
+        // Cargar el archivo de audio con timeout para prevenir bloqueos
+        console.log('Iniciando carga del archivo de audio...');
+        const loadPromise = soundObject.loadAsync({ uri });
+        
+        // Establecer un timeout de 15 segundos para evitar esperas infinitas
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Timeout al cargar el audio (15s)')), 15000);
+        });
+        
+        // Carreras de promesas para manejar timeout
+        console.log('Esperando a que se cargue el audio o se alcance el timeout...');
+        await Promise.race([loadPromise, timeoutPromise]);
+        console.log('Audio cargado correctamente');
+        
+        // Configurar opciones adicionales
+        console.log('Configurando opciones adicionales...');
+        await soundObject.setProgressUpdateIntervalAsync(200);
+        await soundObject.setVolumeAsync(1.0);
+        
+        // Guardar la referencia al objeto de sonido
+        console.log('Guardando referencia al objeto de sonido');
+        setSound(soundObject);
+        
+        // Obtener la duración inicial
+        console.log('Obteniendo información de duración...');
+        const status = await soundObject.getStatusAsync();
+        console.log('Estado del audio:', JSON.stringify(status, null, 2));
+        
+        if (status.isLoaded && status.durationMillis) {
+          console.log('Duración del audio:', status.durationMillis, 'ms');
+          setDuration(status.durationMillis);
+        } else {
+          console.log('No se pudo obtener la duración del audio o el audio no está cargado');
+        }
+        
+        setIsLoading(false);
+        console.log('===== CARGA DE AUDIO COMPLETADA =====');
+      } catch (error) {
+        console.error('Error al inicializar el reproductor de audio:', error);
+        console.log('Mensaje de error detallado:', error.message);
+        console.log('Stack trace:', error.stack);
+        setError('Error al inicializar el reproductor: ' + (error.message || 'Error desconocido'));
+        setIsLoading(false);
+        
+        // Intentar limpiar en caso de error
+        try {
+          console.log('Intentando limpiar recursos en caso de error...');
+          if (sound) {
+            await sound.unloadAsync();
+            setSound(null);
+          }
+        } catch (cleanupError) {
+          console.error('Error adicional al limpiar recursos:', cleanupError);
+        }
+      }
     } catch (error) {
-      console.error('Error al cargar el audio:', error);
+      console.error('Error general al cargar el audio:', error);
+      console.log('Mensaje de error general:', error.message);
+      console.log('Stack trace general:', error.stack);
+      setError('Error al cargar el audio: ' + (error.message || 'Error desconocido'));
       setIsLoading(false);
     }
   };
   
   const unloadAudio = async () => {
+    console.log('Iniciando descarga de audio...');
     if (sound) {
       try {
+        console.log('Deteniendo reproducción...');
         await sound.stopAsync();
+        console.log('Descargando recursos...');
         await sound.unloadAsync();
+        console.log('Reiniciando estados...');
         setSound(null);
         setIsPlaying(false);
+        setPosition(0);
+        positionMillis.current = 0;
+        console.log('Descarga de audio completada');
       } catch (error) {
         console.error('Error al descargar el audio:', error);
+        console.log('Mensaje de error:', error.message);
       }
+    } else {
+      console.log('No hay objeto de sonido para descargar');
     }
   };
   
   const onPlaybackStatusUpdate = (status) => {
-    if (status.isLoaded) {
-      if (status.durationMillis) {
-        setDuration(status.durationMillis);
+    if (!status) {
+      console.log('onPlaybackStatusUpdate: No se recibió estado');
+      return;
+    }
+    
+    try {
+      if (status.isLoaded) {
+        if (status.durationMillis && status.durationMillis !== duration) {
+          console.log('Actualización de duración:', status.durationMillis);
+          setDuration(status.durationMillis);
+        }
+        
+        positionMillis.current = status.positionMillis;
+        setPosition(status.positionMillis);
+        
+        if (status.didJustFinish) {
+          console.log('Reproducción finalizada');
+          setIsPlaying(false);
+        }
+      } else if (status.error) {
+        console.error('Error en la reproducción:', status.error);
       }
-      
-      positionMillis.current = status.positionMillis;
-      setPosition(status.positionMillis);
-      
-      if (status.didJustFinish) {
-        setIsPlaying(false);
-      }
+    } catch (error) {
+      console.error('Error en onPlaybackStatusUpdate:', error);
     }
   };
   
   const handlePlayPause = async () => {
-    if (!sound) return;
+    if (!sound) {
+      console.log('No hay sonido para reproducir/pausar');
+      return;
+    }
     
     try {
+      console.log('Estado actual de reproducción:', isPlaying ? 'reproduciendo' : 'pausado');
+      
       if (isPlaying) {
+        console.log('Pausando reproducción...');
         await sound.pauseAsync();
+        setIsPlaying(false);
+        console.log('Reproducción pausada');
       } else {
-        await sound.playFromPositionAsync(positionMillis.current);
+        console.log('Iniciando reproducción desde posición:', positionMillis.current);
+        
+        // Verificar el estado actual del sonido
+        const status = await sound.getStatusAsync();
+        console.log('Estado actual antes de reproducir:', JSON.stringify(status, null, 2));
+        
+        if (!status.isLoaded) {
+          console.log('El sonido no está cargado, intentando cargar de nuevo...');
+          await verifyAndLoadAudio(recordingUri);
+          return;
+        }
+        
+        // Intentar reproducir con manejo de errores
+        try {
+          await sound.playFromPositionAsync(positionMillis.current);
+          setIsPlaying(true);
+          console.log('Reproducción iniciada correctamente');
+        } catch (playError) {
+          console.error('Error al iniciar la reproducción:', playError);
+          
+          // Intentar reiniciar el reproductor como último recurso
+          try {
+            console.log('Intentando reiniciar el reproductor...');
+            await unloadAudio();
+            await verifyAndLoadAudio(recordingUri);
+          } catch (resetError) {
+            console.error('Error al reiniciar el reproductor:', resetError);
+            setError('No se pudo reproducir el audio. Intente de nuevo.');
+          }
+        }
       }
-      setIsPlaying(!isPlaying);
     } catch (error) {
       console.error('Error al reproducir/pausar el audio:', error);
+      console.log('Mensaje de error:', error.message);
+      console.log('Stack trace:', error.stack);
+      
+      // Intentar recuperarse del error
+      if (recordingUri) {
+        setError('Error de reproducción. Reintentando cargar el audio...');
+        setTimeout(() => {
+          verifyAndLoadAudio(recordingUri);
+        }, 1500);
+      }
     }
   };
   
@@ -295,6 +477,43 @@ export default function NoteScreen() {
       if (Platform.OS === 'ios') {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       }
+    }
+  };
+
+  // Verificar que el URI es válido antes de intentar cargar el audio
+  const verifyAndLoadAudio = async (uri) => {
+    try {
+      console.log('===== VERIFICACIÓN DE AUDIO =====');
+      console.log('Iniciando verificación de URI:', uri);
+      
+      if (!uri) {
+        console.log('Error: URI del audio no válido (null o vacío)');
+        setError('URI del audio no válido');
+        return;
+      }
+      
+      // Validar formato de la URI
+      if (typeof uri !== 'string') {
+        console.log('Error: El formato de URI no es una cadena, es:', typeof uri);
+        setError('El formato de URI no es válido');
+        return;
+      }
+      
+      // Validación básica de formato de URL
+      if (!uri.startsWith('http') && !uri.startsWith('file')) {
+        console.log('Error: La URL no tiene formato válido (no comienza con http o file):', uri);
+        setError('La URL del audio no tiene un formato válido');
+        return;
+      }
+      
+      console.log('URI válida, procediendo a cargar el audio...');
+      // Intentar cargar el audio
+      loadAudio(uri);
+    } catch (error) {
+      console.error('Error general al verificar el audio:', error);
+      console.log('Mensaje de error:', error.message);
+      console.log('Stack trace:', error.stack);
+      setError('Error inesperado al verificar el audio: ' + (error.message || 'Error desconocido'));
     }
   };
 
@@ -448,9 +667,32 @@ export default function NoteScreen() {
           {noteType === 'voice' && (
             <View style={styles.voiceContainer}>
               {isLoading ? (
-                <ActivityIndicator size="large" color={colors.primary || colors.tint} />
-              ) : recordingUri ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={colors.primary || colors.tint} />
+                  <Text style={{ color: colors.text, marginTop: 10 }}>Cargando audio...</Text>
+                </View>
+              ) : error ? (
+                <View style={styles.errorContainer}>
+                  <Ionicons
+                    name="alert-circle-outline"
+                    size={48}
+                    color={colors.error || 'red'}
+                  />
+                  <Text style={[styles.errorText, { color: colors.error || 'red' }]}>
+                    {error}
+                  </Text>
+                  <TouchableOpacity 
+                    style={[styles.retryButton, { backgroundColor: colors.primary || colors.tint }]}
+                    onPress={() => recordingUri && verifyAndLoadAudio(recordingUri)}
+                  >
+                    <Text style={{ color: 'white' }}>Reintentar</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : recordingUri && sound && duration > 0 ? (
                 <View style={styles.audioPlayerContainer}>
+                  <Text style={{ color: colors.text, marginBottom: 10, textAlign: 'center' }}>
+                    Nota de voz grabada: {formatTime(duration || 0)}
+                  </Text>
                   <View style={styles.playerControls}>
                     <TouchableOpacity
                       onPress={handlePlayPause}
@@ -466,22 +708,53 @@ export default function NoteScreen() {
                     </TouchableOpacity>
                     
                     <View style={styles.progressContainer}>
-                      <Slider
-                        value={position}
-                        minimumValue={0}
-                        maximumValue={duration > 0 ? duration : 1}
-                        onValueChange={handleSeek}
-                        minimumTrackTintColor={colors.primary || colors.tint}
-                        maximumTrackTintColor={colorScheme === 'dark' ? '#555' : '#ccc'}
-                        thumbTintColor={colors.primary || colors.tint}
-                        style={{ width: '100%' }}
-                      />
+                      {/* Versión robusta del slider que maneja errores */}
+                      {duration > 0 ? (
+                        <Slider
+                          value={position}
+                          minimumValue={0}
+                          maximumValue={duration}
+                          onValueChange={handleSeek}
+                          minimumTrackTintColor={colors.primary || colors.tint}
+                          maximumTrackTintColor={colorScheme === 'dark' ? '#555' : '#ccc'}
+                          thumbTintColor={colors.primary || colors.tint}
+                          style={{ width: '100%' }}
+                        />
+                      ) : (
+                        <View 
+                          style={{ 
+                            width: '100%', 
+                            height: 20, 
+                            backgroundColor: colorScheme === 'dark' ? '#555' : '#ccc',
+                            borderRadius: 10
+                          }}
+                        >
+                          <View 
+                            style={{ 
+                              width: '0%', 
+                              height: '100%', 
+                              backgroundColor: colors.primary || colors.tint,
+                              borderRadius: 10 
+                            }} 
+                          />
+                        </View>
+                      )}
                       <View style={styles.timeInfo}>
                         <Text style={{ color: colors.text }}>{formatTime(position)}</Text>
                         <Text style={{ color: colors.text }}>{formatTime(duration)}</Text>
                       </View>
                     </View>
                   </View>
+
+                  {/* Link para depuración */}
+                  <TouchableOpacity 
+                    onPress={() => console.log('URL de audio:', recordingUri)}
+                    style={{ marginTop: 20 }}
+                  >
+                    <Text style={{ color: colors.textSecondary, fontSize: 12, textAlign: 'center' }}>
+                      Comprobar URL de audio
+                    </Text>
+                  </TouchableOpacity>
                 </View>
               ) : (
                 <View style={styles.noAudioContainer}>
@@ -491,8 +764,21 @@ export default function NoteScreen() {
                     color={colors.error || 'red'}
                   />
                   <Text style={[styles.noAudioText, { color: colors.text }]}>
-                    No se encontró el audio de esta nota
+                    {recordingUri ? 'Preparando el reproductor de audio...' : 'No se encontró el audio de esta nota'}
                   </Text>
+                  {recordingUri && (
+                    <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 5 }}>
+                      URI: {recordingUri.substring(0, 50)}...
+                    </Text>
+                  )}
+                  {recordingUri && (
+                    <TouchableOpacity 
+                      style={[styles.retryButton, { backgroundColor: colors.primary || colors.tint, marginTop: 15 }]}
+                      onPress={() => recordingUri && verifyAndLoadAudio(recordingUri)}
+                    >
+                      <Text style={{ color: 'white' }}>Cargar audio</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
             </View>
@@ -642,6 +928,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginTop: 4,
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    minHeight: 200,
+  },
+  errorContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    minHeight: 200,
+  },
+  errorText: {
+    marginTop: 12,
+    fontSize: 16,
+    textAlign: 'center',
+    marginHorizontal: 20,
+  },
+  retryButton: {
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 16,
+    paddingHorizontal: 20,
   },
   noAudioContainer: {
     alignItems: 'center',
