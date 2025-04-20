@@ -153,7 +153,8 @@ npm install
 1. Crea una cuenta en [Supabase](https://supabase.com/) si aún no dispones de una
 2. Crea un nuevo proyecto
 3. Obtén la URL del proyecto y la clave anónima (Anon Key) desde la sección de configuración de API
-4. Sustituye las credenciales en el archivo `.env.local`:
+4. Duplica el archivo `.env.example` y llámalo `.env.local`
+5. Sustituye las credenciales en el archivo `.env.local`:
 
 ```
 EXPO_PUBLIC_SUPABASE_URL=TU_URL_DE_SUPABASE
@@ -162,9 +163,58 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=TU_CLAVE_ANON_DE_SUPABASE
 
 ### 4. Configurar la base de datos
 
-1. Ve a la sección SQL Editor en el panel de control de Supabase
-2. Ejecuta el script SQL que se encuentra en `sql/init.sql`
-   - Este script creará las tablas necesarias y configurará las políticas de seguridad
+La base de datos se puede configurar de dos maneras: mediante migraciones individuales (recomendado) o mediante un único script SQL.
+
+#### Opción A: Usar migraciones (recomendado)
+
+Las migraciones están divididas en archivos separados por funcionalidad en el directorio `sql/migrations/`. Puedes aplicarlas usando los scripts proporcionados:
+
+##### Usando el script de Node.js:
+
+```bash
+# Instalar dependencia necesaria
+npm install node-fetch
+
+# Configurar variables de entorno
+export SUPABASE_URL="https://tu-proyecto.supabase.co"
+export SUPABASE_SERVICE_ROLE_KEY="tu-clave-service-role"
+
+# Aplicar migraciones
+node sql/run_migrations.js
+```
+
+En Windows (PowerShell):
+```powershell
+$env:SUPABASE_URL="https://tu-proyecto.supabase.co"
+$env:SUPABASE_SERVICE_ROLE_KEY="tu-clave-service-role"
+node sql/run_migrations.js
+```
+
+##### Usando la CLI de Supabase:
+
+```bash
+# Autenticarse primero
+supabase login
+
+# Aplicar migraciones en orden
+supabase db execute --project-ref TU_REFERENCIA_DE_PROYECTO -f sql/migrations/01_extensions.sql
+supabase db execute --project-ref TU_REFERENCIA_DE_PROYECTO -f sql/migrations/02_tables.sql
+# ... y así sucesivamente con todos los archivos de migración
+```
+
+#### Opción B: Usar script único
+
+Alternativamente, puedes ejecutar el script completo:
+
+```bash
+# Desde la CLI de Supabase
+supabase db execute --project-ref TU_REFERENCIA_DE_PROYECTO -f sql/init.sql
+
+# O directamente desde el Editor SQL de Supabase
+# Copia el contenido de sql/init.sql y ejecútalo en el Editor SQL
+```
+
+Para más detalles sobre las migraciones, consulta [sql/README.md](./sql/README.md).
 
 ### 5. Configurar la autenticación en Supabase
 
@@ -201,6 +251,8 @@ Sigue las instrucciones en la terminal para abrir la aplicación en:
 - `lib/` - Utilidades y configuración
   - `supabase.ts` - Cliente de Supabase
 - `sql/` - Scripts SQL para configurar la base de datos
+  - `migrations/` - Migraciones individuales para configuración progresiva
+  - `init.sql` - Script completo para configuración en un solo paso
 
 ## Soporte y contacto
 
