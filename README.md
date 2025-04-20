@@ -11,7 +11,7 @@ NotasApp ha sido desarrollada para facilitar la organización personal y profesi
 - **Interfaz adaptable**: Diseño que se ajusta perfectamente a móviles, tablets y ordenadores
 - **Personalización**: Modo claro/oscuro para adaptar la interfaz a tus preferencias
 
-## Guía de usuario (español de España)
+## Guía de usuario
 
 ### Registro e inicio de sesión
 
